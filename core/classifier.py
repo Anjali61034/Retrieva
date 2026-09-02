@@ -23,15 +23,18 @@ def classify_transaction(row):
     if status == "success":
         return "success"
 
-    # Rule 1: OTP timeout — otp was sent, but gap to next event > 90s
+    # Rule 1: explicit bank/gateway timeout error code — checked FIRST.
+    # A hard error code from the bank is more reliable evidence than an
+    # inferred timing gap, so it takes priority over Rule 2 below.
+    if error_code == "TIMED_OUT":
+        return "bank_timeout"
+
+    # Rule 2: OTP timeout — otp was sent, but gap to next event > 90s,
+    # and no explicit bank error code was present (see Rule 1).
     if otp_sent and next_event:
         gap_seconds = (next_event - otp_sent).total_seconds()
         if gap_seconds > 90:
             return "otp_timeout"
-
-    # Rule 2: explicit bank/gateway timeout error code
-    if error_code == "TIMED_OUT":
-        return "bank_timeout"
 
     # Rule 3: explicit insufficient funds decline
     if error_code == "INSUFFICIENT_FUNDS":

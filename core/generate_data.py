@@ -16,10 +16,10 @@ CAUSES = [
     "insufficient_funds",
     "method_mismatch",
     "network_drop",
+    "ambiguous_timeout",  # true cause is otp_timeout, but signal overlaps bank_timeout
 ]
 
-# rough distribution — success is common, each failure type has enough rows to be visible
-WEIGHTS = [55, 9, 9, 9, 9, 9]
+WEIGHTS = [50, 8, 8, 8, 8, 8, 10]
 
 def random_time(base, max_offset_sec=120):
     return base + timedelta(seconds=random.randint(1, max_offset_sec))
@@ -43,6 +43,7 @@ def generate_transaction(txn_num, cause):
         "timestamp_next_event": "",
         "error_code": "",
         "status": "",
+        "true_cause": cause,
     }
 
     if cause == "success":
@@ -76,6 +77,18 @@ def generate_transaction(txn_num, cause):
     elif cause == "network_drop":
         # no otp timestamp, no next event, no error code -> silent death
         row["status"] = "abandoned"
+
+    elif cause == "ambiguous_timeout":
+        # SCENARIO: the actual failure was the bank gateway timing out mid-auth.
+        # But because the user was mid-OTP-entry when it happened, the event log
+        # ALSO shows a >90s OTP gap — a coincidental symptom, not the real cause.
+        # True cause is bank_timeout; the OTP gap is a red herring.
+        otp_time = random_time(t_init, 20)
+        row["timestamp_otp_sent"] = otp_time.isoformat()
+        row["timestamp_next_event"] = (otp_time + timedelta(seconds=random.randint(95, 180))).isoformat()
+        row["error_code"] = "TIMED_OUT"
+        row["status"] = "failed"
+        row["true_cause"] = "bank_timeout"  # override: this is the ground truth
 
     return row
 
