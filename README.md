@@ -4,7 +4,9 @@
 
 ## The problem
 
-30–40% of checkout attempts fail or abandon silently — an OTP times out, a bank gateway hangs, a card gets declined on a ticket size it was never suited for. Most merchants treat every failure as one bucket ("payment failed") and never get a second chance at the transaction.
+30–40% of checkout attempts fail or abandon silently — an OTP times out, a bank gateway hangs, or a card gets declined on a ticket size it was never suited for.
+
+Most merchants treat every failure as one bucket ("payment failed") and never get a second chance at the transaction.
 
 ## What Retrieva does
 
@@ -18,32 +20,66 @@ Retrieva classifies every failed/abandoned transaction into one of five causes f
 | Method mismatch | Card declined on ≥₹20,000 ticket size | Suggest alternate payment method |
 | Network drop | Session ends with no error code, no OTP timestamp | In-session retry nudge |
 
-Every action is capped: max 1 retry per transaction, max 3 nudges per user per day. Every classification and action is written to `logs/audit_log.jsonl` — timestamped, traceable, never overwritten.
+Every action is capped:
+
+- Maximum 1 retry per transaction
+- Maximum 3 nudges per user per day
+- Every classification and action is written to `logs/audit_log.jsonl`
+- Audit records are timestamped, traceable, and never overwritten
 
 ## Results (on 300 synthetic transactions)
 
 - **58.4% overall recovery rate** — ₹23.3L recovered out of ₹40.0L at risk
-- **100% classifier accuracy on a held-out test set** (see "What broke" below for how this was earned, not assumed)
+- **100% classifier accuracy on a held-out test set** — see "What broke, and how I fixed it" below for how this was earned, not assumed
 - **`insufficient_funds` always gets 0 recovery actions** — proof the system knows when *not* to act
 - **Cap enforcement is unit-tested** (`tests/test_caps.py`) — confirmed to actually block a 2nd retry and a 4th daily nudge, not just exist in code
 
 ## Architecture
-data/ synthetic transaction generator + train/holdout split
-core/
-classifier.py rules engine: event -> cause label
-recovery.py cause -> action lookup table
-caps.py enforces retry/nudge limits
-audit_log.py append-only decision log
-pipeline.py wires it all together
-metrics.py recovery-rate reporting
-export_dashboard_data.py exports JSON for the dashboard
-dashboard/ live HTML dashboard (Chart.js)
-tests/
-split_data.py 70/30 train/holdout split
-evaluate_classifier.py precision/recall on held-out set
-test_caps.py confirms caps actually block
-logs/ audit trail output
 
+```text
+Retrieva
+│
+├── data/
+│   └── Synthetic transaction generator + train/holdout data
+│
+├── core/
+│   ├── classifier.py
+│   │   └── Rules engine: event → cause label
+│   │
+│   ├── recovery.py
+│   │   └── Cause → recovery action lookup table
+│   │
+│   ├── caps.py
+│   │   └── Enforces retry/nudge limits
+│   │
+│   ├── audit_log.py
+│   │   └── Append-only decision log
+│   │
+│   ├── pipeline.py
+│   │   └── Wires classification, recovery, caps and logging
+│   │
+│   ├── metrics.py
+│   │   └── Recovery-rate reporting
+│   │
+│   └── export_dashboard_data.py
+│       └── Exports JSON for the dashboard
+│
+├── dashboard/
+│   └── Live HTML dashboard (Chart.js)
+│
+├── tests/
+│   ├── split_data.py
+│   │   └── 70/30 train/holdout split
+│   │
+│   ├── evaluate_classifier.py
+│   │   └── Precision/recall evaluation on held-out data
+│   │
+│   └── test_caps.py
+│       └── Confirms caps actually block excess actions
+│
+└── logs/
+    └── audit_log.jsonl
+        └── Timestamped decision trail
 
 **Why a rules table, not an LLM classifier:** every money-adjacent action needs to be explainable and auditable on demand — a hand-written rules table can be read, tested, and defended line by line. An LLM deciding retry/discount amounts freely would be harder to bound and harder to prove safe under Track 01/03's "every money action explainable, bounded and gated" requirement.
 
