@@ -4,9 +4,7 @@
 
 ## The problem
 
-30–40% of checkout attempts fail or abandon silently — an OTP times out, a bank gateway hangs, or a card gets declined on a ticket size it was never suited for.
-
-Most merchants treat every failure as one bucket ("payment failed") and never get a second chance at the transaction.
+30–40% of checkout attempts fail or abandon silently — an OTP times out, a bank gateway hangs, or a card gets declined on a ticket size it was never suited for. Most merchants treat every failure as one bucket ("payment failed") and never get a second chance at the transaction.
 
 ## What Retrieva does
 
@@ -36,114 +34,97 @@ Every action is capped:
 
 ## Architecture
 
-```text
-Retrieva
-│
-├── data/
-│   └── Synthetic transaction generator + train/holdout data
-│
-├── core/
-│   ├── classifier.py
-│   │   └── Rules engine: event → cause label
-│   │
-│   ├── recovery.py
-│   │   └── Cause → recovery action lookup table
-│   │
-│   ├── caps.py
-│   │   └── Enforces retry/nudge limits
-│   │
-│   ├── audit_log.py
-│   │   └── Append-only decision log
-│   │
-│   ├── pipeline.py
-│   │   └── Wires classification, recovery, caps and logging
-│   │
-│   ├── metrics.py
-│   │   └── Recovery-rate reporting
-│   │
-│   └── export_dashboard_data.py
-│       └── Exports JSON for the dashboard
-│
-├── dashboard/
-│   └── Live HTML dashboard (Chart.js)
-│
-├── tests/
-│   ├── split_data.py
-│   │   └── 70/30 train/holdout split
-│   │
-│   ├── evaluate_classifier.py
-│   │   └── Precision/recall evaluation on held-out data
-│   │
-│   └── test_caps.py
-│       └── Confirms caps actually block excess actions
-│
-└── logs/
-    └── audit_log.jsonl
-        └── Timestamped decision trail
+    Retrieva
+    │
+    ├── data/
+    │   └── Synthetic transaction generator + train/holdout data
+    │
+    ├── core/
+    │   ├── classifier.py               Rules engine: event -> cause label
+    │   ├── recovery.py                 Cause -> recovery action lookup table
+    │   ├── caps.py                     Enforces retry/nudge limits
+    │   ├── audit_log.py                Append-only decision log
+    │   ├── pipeline.py                 Wires classification, recovery, caps, logging
+    │   ├── metrics.py                  Recovery-rate reporting
+    │   └── export_dashboard_data.py    Exports JSON for the dashboard
+    │
+    ├── dashboard/
+    │   └── Live HTML dashboard (Chart.js)
+    │
+    ├── tests/
+    │   ├── split_data.py               70/30 train/holdout split
+    │   ├── evaluate_classifier.py      Precision/recall on held-out data
+    │   └── test_caps.py                Confirms caps actually block excess actions
+    │
+    └── logs/
+        └── audit_log.jsonl             Timestamped decision trail
 
+**Why a rules table, not an LLM classifier?**
 
-Why a rules table, not an LLM classifier?
+Every money-adjacent action needs to be explainable and auditable on demand. A hand-written rules table can be read, tested, and defended line by line. An LLM deciding retry or discount amounts freely would be harder to bound and harder to prove safe under Track 03's requirement that every money action be explainable, bounded, and gated.
 
-Every money-adjacent action needs to be explainable and auditable on demand.
+## What broke, and how I fixed it
 
-A hand-written rules table can be read, tested, and defended line by line. An LLM deciding retry or discount amounts freely would be harder to bound and harder to prove safe under Track 03's requirement that every money action be explainable, bounded, and gated.
-
-What broke, and how I fixed it
-
-My classifier initially checked the OTP-timing rule before the bank error-code rule.
-
-On a held-out test set, this caused every transaction where a bank timeout coincided with the user being mid-OTP-entry to be misclassified as an OTP timeout instead of a bank timeout.
+My classifier initially checked the OTP-timing rule before the bank error-code rule. On a held-out test set, this caused every transaction where a bank timeout coincided with the user being mid-OTP-entry to be misclassified as an OTP timeout instead of a bank timeout.
 
 This caused:
+- `bank_timeout` recall to drop to 44%
+- `otp_timeout` precision to drop to 53%
+- Overall accuracy to drop to 90%
 
-bank_timeout recall to drop to 44%
-otp_timeout precision to drop to 53%
-Overall accuracy to drop to 90%
-Root cause
+**Root cause:** an inferred timing signal was overriding a hard error code.
 
-An inferred timing signal was overriding a hard error code.
-
-Fix
-
-I reordered the rules so the explicit bank error code is checked first, since it is stronger evidence than an inferred timing gap.
+**Fix:** I reordered the rules so the explicit bank error code is checked first, since it is stronger evidence than an inferred timing gap.
 
 After the fix:
-
-bank_timeout recall returned to 100%
-otp_timeout precision returned to 100%
-Overall classifier accuracy returned to 100%
+- `bank_timeout` recall returned to 100%
+- `otp_timeout` precision returned to 100%
+- Overall classifier accuracy returned to 100%
 
 The evaluation was performed on the same held-out test set after the fix.
 
-How to run it
-1. Generate synthetic transaction data
+## How to run it
+
+**1. Generate synthetic transaction data**
+```bash
 python core/generate_data.py
-2. Split into train/holdout sets
+```
+
+**2. Split into train/holdout sets**
+```bash
 cd tests
 python split_data.py
-3. Evaluate classifier accuracy on the held-out set
+```
+
+**3. Evaluate classifier accuracy on the held-out set**
+```bash
 python evaluate_classifier.py
-4. Confirm caps actually block excess actions
+```
+
+**4. Confirm caps actually block excess actions**
+```bash
 python test_caps.py
-5. Run the full pipeline
+```
 
-The pipeline performs:
-
-classify → recover → cap → log
-
+**5. Run the full pipeline** (classify → recover → cap → log)
+```bash
 cd ../core
 python pipeline.py
-6. See recovery metrics
-python metrics.py
-7. Export dashboard data and view it
-python export_dashboard_data.py
+```
 
+**6. See recovery metrics**
+```bash
+python metrics.py
+```
+
+**7. Export dashboard data and view it**
+```bash
+python export_dashboard_data.py
 cd ../dashboard
 python -m http.server 8000
+```
+Then open: `http://localhost:8000`
 
-Open:
-
-http://localhost:8000
-Track
+## Track
 
 Track 03 — AI Revenue Recovery
