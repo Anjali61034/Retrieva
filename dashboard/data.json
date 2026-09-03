@@ -1,0 +1,48 @@
+{
+  "total_transactions": 300,
+  "total_amount_at_risk": 3997940.13,
+  "total_amount_recovered": 2334165.4,
+  "overall_recovery_rate": 58.4,
+  "by_cause": [
+    {
+      "cause": "bank_timeout",
+      "total": 50,
+      "recovered": 28,
+      "recovery_rate": 56.0,
+      "amount_at_risk": 1164033.56,
+      "amount_recovered": 596866.25
+    },
+    {
+      "cause": "insufficient_funds",
+      "total": 26,
+      "recovered": 0,
+      "recovery_rate": 0.0,
+      "amount_at_risk": 588827.34,
+      "amount_recovered": 0.0
+    },
+    {
+      "cause": "method_mismatch",
+      "total": 27,
+      "recovered": 18,
+      "recovery_rate": 66.7,
+      "amount_at_risk": 980332.58,
+      "amount_recovered": 687196.13
+    },
+    {
+      "cause": "network_drop",
+      "total": 25,
+      "recovered": 19,
+      "recovery_rate": 76.0,
+      "amount_at_risk": 420684.08,
+      "amount_recovered": 295355.67
+    },
+    {
+      "cause": "otp_timeout",
+      "total": 30,
+      "recovered": 26,
+      "recovery_rate": 86.7,
+      "amount_at_risk": 844062.57,
+      "amount_recovered": 754747.35
+    }
+  ]
+}
