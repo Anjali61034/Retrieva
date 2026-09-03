@@ -81,42 +81,69 @@ Retrieva
     └── audit_log.jsonl
         └── Timestamped decision trail
 
-**Why a rules table, not an LLM classifier:** every money-adjacent action needs to be explainable and auditable on demand — a hand-written rules table can be read, tested, and defended line by line. An LLM deciding retry/discount amounts freely would be harder to bound and harder to prove safe under Track 01/03's "every money action explainable, bounded and gated" requirement.
 
-## What broke, and how I fixed it
+Why a rules table, not an LLM classifier?
 
-My classifier initially checked the OTP-timing rule before the bank error-code rule. On a held-out test set, this caused every transaction where a bank timeout coincided with the user being mid-OTP-entry to be misclassified as an OTP timeout instead of a bank timeout — dropping `bank_timeout` recall to 44% and `otp_timeout` precision to 53% (90% overall accuracy). Root cause: an inferred timing signal was overriding a hard error code. Fix: reordered the rules so the explicit bank error code is checked first, since it's stronger evidence than an inferred gap. Recall and precision both returned to 100% on the same held-out set after the fix.
+Every money-adjacent action needs to be explainable and auditable on demand.
 
-## How to run it
+A hand-written rules table can be read, tested, and defended line by line. An LLM deciding retry or discount amounts freely would be harder to bound and harder to prove safe under Track 03's requirement that every money action be explainable, bounded, and gated.
 
-```bash
-# 1. Generate synthetic transaction data
+What broke, and how I fixed it
+
+My classifier initially checked the OTP-timing rule before the bank error-code rule.
+
+On a held-out test set, this caused every transaction where a bank timeout coincided with the user being mid-OTP-entry to be misclassified as an OTP timeout instead of a bank timeout.
+
+This caused:
+
+bank_timeout recall to drop to 44%
+otp_timeout precision to drop to 53%
+Overall accuracy to drop to 90%
+Root cause
+
+An inferred timing signal was overriding a hard error code.
+
+Fix
+
+I reordered the rules so the explicit bank error code is checked first, since it is stronger evidence than an inferred timing gap.
+
+After the fix:
+
+bank_timeout recall returned to 100%
+otp_timeout precision returned to 100%
+Overall classifier accuracy returned to 100%
+
+The evaluation was performed on the same held-out test set after the fix.
+
+How to run it
+1. Generate synthetic transaction data
 python core/generate_data.py
-
-# 2. Split into train/holdout sets
+2. Split into train/holdout sets
 cd tests
 python split_data.py
-
-# 3. Evaluate classifier accuracy on the held-out set
+3. Evaluate classifier accuracy on the held-out set
 python evaluate_classifier.py
-
-# 4. Confirm caps actually block excess actions
+4. Confirm caps actually block excess actions
 python test_caps.py
+5. Run the full pipeline
 
-# 5. Run the full pipeline (classify -> recover -> cap -> log)
+The pipeline performs:
+
+classify → recover → cap → log
+
 cd ../core
 python pipeline.py
-
-# 6. See recovery metrics
+6. See recovery metrics
 python metrics.py
-
-# 7. Export dashboard data and view it
+7. Export dashboard data and view it
 python export_dashboard_data.py
+
 cd ../dashboard
 python -m http.server 8000
-# open http://localhost:8000
-```
 
-## Track
+Open:
+
+http://localhost:8000
+Track
 
 Track 03 — AI Revenue Recovery
